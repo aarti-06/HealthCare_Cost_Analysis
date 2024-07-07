@@ -1,0 +1,320 @@
+---
+title: "687 Project"
+output: html_document
+---
+
+```{r}
+# Team Members: Nakul Rattan, Himanshu Mangal, Aarti Mehra, Nandita Pathardikar
+```
+
+
+## Analysis of HMO Health Data
+
+# The first step is to import the CSV into a dataframe for analysis and training our model. We will also library the tidyverse package.
+
+```{r}
+library(tidyverse)
+
+datafile <- "https://intro-datascience.s3.us-east-2.amazonaws.com/HMO_data.csv"
+data <- read_csv(datafile)
+
+```
+
+# We can now see what the data is like. 
+
+```{r}
+str(data)
+```
+# Checking for null values. 
+
+```{r}
+#sum(is.na(data$X))
+#sum(is.na(data$age))
+#sum(is.na(data$bmi))
+#sum(is.na(data$children))
+#sum(is.na(data$smoker))
+#sum(is.na(data$location))
+#sum(is.na(data$location_type))
+#sum(is.na(data$education_level))
+#sum(is.na(data$yearly_physical))
+#sum(is.na(data$exercise))
+#sum(is.na(data$married))
+#sum(is.na(data$hypertension))
+#sum(is.na(data$gender))
+#sum(is.na(data$cost))
+```
+
+# Interpolate the null values. 
+
+```{r}
+library(imputeTS)
+data$bmi <- na_interpolation(data$bmi)
+data$hypertension <- na_interpolation(data$hypertension)
+```
+
+# Adding the *expensive* column in the dataframe. 
+
+```{r}
+data = data %>% 
+  mutate(expensive = if_else(cost<=median(cost)*2,FALSE, TRUE))
+
+# Define empty columns
+empty_cols <- c('ageCategory')
+
+# Add empty columns
+data[ , empty_cols] <- NA
+
+data$ageCategory <- as.factor(ifelse(data$age<18, 'children',
+                     ifelse(data$age>=18 & data$age<=34, 'young_adults',
+                     ifelse(data$age>=35 & data$age<=54, 'middle_aged-adults', 'older_adults'))))
+#summary(data)
+```
+# Let's view the data 
+
+```{r}
+#view(data)
+```
+
+# We can now run a linear regression model on the dataframe. This would also help us identify significant predictors. 
+
+```{r}
+set.seed(111)
+model <- lm(expensive~.-X-cost,data=data)
+summary(model)
+```
+# Dividing the group into expensive and not expensive
+
+```{r}
+dfExpensive <- data %>% filter(expensive==TRUE)
+#dfExpensive
+
+dfNotExpensive <- data %>% filter(expensive==FALSE)
+#dfNotExpensive
+```
+
+# Checking the percentage of smokers in the expensive group
+
+```{r}
+smokersExpensive <- sum(if_else(dfExpensive$smoker=="yes",1,0))
+#1063 smokers out of 1792 people in the expensive set
+ratioSmokersExpensive <- smokersExpensive/nrow(dfExpensive) 
+
+```
+
+# Visualizing the above data in a pie chart 
+
+```{r}
+slices <- c(ratioSmokersExpensive*100, (1-ratioSmokersExpensive)*100)
+lbls <- c("Smokers","Non-Smokers")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct) # add percents to labels
+lbls <- paste(lbls,"%",sep="") # ad % to labels
+pie(slices,labels = lbls, col=rainbow(length(lbls)),
+    main="Pie Chart of Smokers vs Non-Smokers: Expensive bracket") 
+
+```
+# Checking the percentage of smokers in the not expensive group
+
+```{r}
+smokersNotExpensive <- sum(if_else(dfNotExpensive$smoker=="yes",1,0))
+ratioSmokersNotExpensive <- smokersNotExpensive/nrow(dfNotExpensive)
+
+#ratioSmokersNotExpensive
+
+slices <- c(ratioSmokersNotExpensive*100, (1-ratioSmokersNotExpensive)*100)
+lbls <- c("Smokers","Non-Smokers")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct) # add percents to labels
+lbls <- paste(lbls,"%",sep="") # ad % to labels
+pie(slices,labels = lbls, col=rainbow(length(lbls)),
+    main="Pie Chart of Smokers vs Non-Smokers: Not Expensive bracket") 
+
+# 7% of people in the not expensive group are smokers.
+
+```
+#Breakdown of smokers by age
+
+``` {r}
+smokersByAge <- dfExpensive %>% select(smoker,ageCategory) %>% group_by(ageCategory,smoker) %>%summarise(total_count=n(),.groups = 'drop')
+
+ggplot(smokersByAge,aes(x=ageCategory,y=total_count,fill=smoker)) + geom_bar(stat="identity",color="black") + theme_minimal() + xlab("Age Category") + ylab("Count") + ggtitle("Breakdown of Smokers by Age: Expensive") + scale_x_discrete(limits=c("young_adults", "middle_aged-adults", "older_adults"))
+```
+```{r}
+smokersByAge <- dfNotExpensive %>% select(smoker,ageCategory) %>% group_by(ageCategory,smoker) %>%summarise(total_count=n(),.groups = 'drop')
+
+ggplot(smokersByAge,aes(x=ageCategory,y=total_count,fill=smoker)) + geom_bar(stat="identity",color="black") + theme_minimal() + xlab("Age Category") + ylab("Count") + ggtitle("Breakdown of Smokers by Age: Not Expensive") + scale_x_discrete(limits=c("young_adults", "middle_aged-adults", "older_adults"))
+
+```
+
+```{r}
+#adding violin-plot of bmi wrt gender
+library(ggplot2)
+vioPlot <- ggplot(data, aes(x=gender, y=bmi, fill=expensive)) + 
+  geom_violin(width=1,trim=FALSE) + theme_minimal() + coord_flip() + xlab("Gender") + ylab("Body Mass Index(BMI)") +
+  ggtitle("Relation between BMI and Gender for health expense")
+
+vioPlot
+
+# From the visualization, we can see that expensive males and females have high bmi as compared to their non-expensive counterparts 
+```
+
+
+```{r}
+# histogram plot of age for expensive data set
+histPlot <- 
+  ggplot(dfExpensive,aes(x=age)) +
+    geom_histogram( color="#e9ecef", position = 'identity', bins=40) + theme_minimal() + xlab("Age") +  ggtitle("Breakdown by Age for Expensive treatements")
+
+histPlot
+
+# from the plot, expensive individuals are mostly the ones with age less than 20, age greater than 60, and also with age around 45-50.
+```
+
+```{r}
+# Scatter plot of age vs bmi based on hypertension
+
+library(ggplot2)
+scatterPlot <- ggplot(dfExpensive, aes(x=age, y=bmi, color=hypertension)) + geom_point() + 
+  ylab("BMI") + xlab("Age Range") + ggtitle("Age vs BMI based on Hypertension")
+scatterPlot
+
+# from the plot, it can be seen that indviduals with age greater than 60 and a high bmi are expensive, though their levels of hypertension differ, most individuals do not suffer from hypertension
+```
+# Map of Average Age
+```{r}
+library(maps); library(ggmap); library(mapproj)
+```
+
+```{r}
+#unique(data$location)
+us <- map_data("state")      
+data$location <- tolower(data$location)
+
+dfSimple <- data %>% group_by(location) %>% summarise(meanAge=mean(age))
+
+dfMerged <- merge(dfSimple, us, by.x="location",by.y = "region")
+dfMerged <- dfMerged %>% arrange(order)
+map <- ggplot(dfMerged)          
+map <- map + aes(x=long, y=lat, group=group,label=location,fill=meanAge) +  geom_polygon(color="black")
+map <- map + expand_limits(x=dfMerged$long, y=dfMerged$lat)
+map <- map + coord_map() + ggtitle("Average Age by State")
+map
+
+```
+
+```{r}
+# jitter plot of age vs cost with excercise
+
+library(ggplot2)
+jitterPlot <- ggplot(dfExpensive, aes(x=age, y= cost, color= exercise)) +
+        geom_jitter() + xlab("Age") + ylab("Cost") + ggtitle("Age vs Cost with exercise factor")
+
+jitterPlot
+
+# from the plot, we can infer that most individuals pay between $10000 and $15000, with most of them being over the age of 45 and also, there are few individuals with active workout routine.
+```
+
+# Finding the correlation between activity and cost
+
+```{r}
+exerciseExpensive <- sum(if_else(dfExpensive$exercise=="Active",1,0))
+
+ratioExerciseExpensive <- exerciseExpensive/nrow(dfExpensive)
+# 13.2% people that are active are in the expensive group
+
+slices <- c(ratioExerciseExpensive*100, (1-ratioExerciseExpensive)*100)
+lbls <- c("Active","Not Active")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct) # add percents to labels
+lbls <- paste(lbls,"%",sep="") # ad % to labels
+pie(slices,labels = lbls,
+    main="Pie Chart of Active vs Not Active: Expensive bracket") 
+```
+
+``` {r}
+exerciseNotExpensive <- sum(if_else(dfNotExpensive$exercise=="Active",1,0))
+
+ratioExerciseNotExpensive <- exerciseNotExpensive/nrow(dfNotExpensive)
+# 28.5% of people who are active are in the not expensive group.
+
+slices <- c(ratioExerciseNotExpensive*100, (1-ratioExerciseNotExpensive)*100)
+lbls <- c("Active","Not Active")
+pct <- round(slices/sum(slices)*100)
+lbls <- paste(lbls, pct) # add percents to labels
+lbls <- paste(lbls,"%",sep="") # ad % to labels
+pie(slices,labels = lbls,
+    main="Pie Chart of Active vs Not Active: Not Expensive bracket")
+```
+
+
+## Predictive Models
+
+```{r}
+
+library(rpart)
+library(e1071)
+library(kernlab)
+library(caret)
+
+```
+
+# Reading in the test data 
+
+```{r}
+#testData <- read_csv("D:\\Downloads\\HMO_TEST_data_sample.csv")
+#testDataPrediction <- read_csv("D:\\Downloads\\HMO_TEST_data_sample_solution.csv")
+#TEST_PRED = as.factor(testDataPrediction$expensive)
+```
+
+# SVM Model 
+
+```{r}
+data$expensive <- as.factor(data$expensive)
+
+trainList <- createDataPartition(y=data$expensive,p=0.7,list=FALSE)
+trainSet <- data[trainList,]
+testSet <- data[-trainList,]
+
+svmModel <- train(expensive~age+bmi+children+smoker+exercise+hypertension,data=trainSet,method="svmRadial",trControl=trainControl(method="none"),preProcess=c("center","scale"))
+#svmModel
+
+predictValues <- predict(svmModel,testSet)
+
+confusionMatrix(predictValues, testSet$expensive)
+
+```
+
+# KSVM
+
+```{r}
+svm.model<-ksvm(data=trainSet,expensive~age+bmi+children+smoker+exercise+hypertension)
+svm.model
+predictValues <- predict(svm.model,testSet)
+confusionMatrix(predictValues,testSet$expensive)
+```
+
+# SVM model with KFold #88.3% Accuracy, 97% sensitivity
+
+```{r}
+trctrl <- trainControl(method="repeatedcv",number=10)
+svm.model.kfold <- train(expensive~age+bmi+children+smoker+exercise+hypertension,data=trainSet,method="svmRadial",trControl=trctrl,preProcess=c("center","scale"))
+svm.model.kfold
+predictValues <- predict(svm.model.kfold,testSet)
+confusionMatrix(predictValues,testSet$expensive)
+```
+
+#Model with rpart - 88.92% accuracy, 97% sensitivity
+```{r}
+library(rpart.plot)
+```
+
+```{r}
+model.rpart <- train(expensive~age+bmi+children+smoker+exercise+hypertension,method="rpart",data=trainSet,trControl=trctrl,tuneLength=50)
+predictValues <- predict(model.rpart,testSet)
+confusionMatrix(predictValues,testSet$expensive)
+
+#model.rpart
+
+rpart.plot(model.rpart$finalModel)
+```
+
